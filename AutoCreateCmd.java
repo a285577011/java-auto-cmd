@@ -3,23 +3,31 @@ package org.example;
 import com.squareup.protoparser.*;
 
 import java.io.*;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
  * @author hyy
- * @desc
+ * @desc  用法 ：协议号的常量命名（ 跟协议的消息内容message （去掉 req resp后）一致 （头部大小写有区分而已）
+ *        有些协议只是同步不需要生成cmd 则在协议号写 skip 关键字
+ *        默认是module的生成 如果是生成在mgr模块的 则在协议后后面备注 mgr 关键字
+ *        跨服如果没有返回区服的协议（直接返回给客户端那种）则协议号后面两位跟区服协议号保持一致，就可以自动映射到区服返回跟resp消息体
+ *        跨服如果有返回 则协议号命名以 Ctg开头(区服上跨服则已Gtc开头） 然后后面命名跟区服的协议号一致 然后必须在跨服定义Gtc开头的resp
+ *        协议号后面备注可以生成desc
+ *
  * @date 2024/8/28 11:12
  */
 public class AutoCreateCmd {
 
     public static List<String> messagList;
 
-    public static List<String> messagList2;
-    public static List<TypeElement> elList2;
+    public static List<String> messagList2 = new ArrayList<>();
+    public static List<TypeElement> elList2 = new ArrayList<>();
 
     public static String pbPackPath2;
     public static String ROOT_PATH = "D:\\javaPro\\game\\";
@@ -34,20 +42,20 @@ public class AutoCreateCmd {
     public static Map<Integer, String> elListMap2 = new HashMap<>();//协助的code 数值对应code string
 
     public static Map<Integer, String> elListCmdMap2 = new HashMap<>();//协助的code 数值对应code string
-
+    public static String date = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
     /**
-     * 填入pb文件  注释带有mgr表示manger里面的模块 带有 skip 表示不生成
+     * 填入pb文件  注释带有mgr表示manger里面的模块 带有 skip 表示不生成 跨服respene -10000 对应code
      *
      * @param args
      * @throws IOException
      */
     public static void main(String[] args) throws IOException {
 
-        //String pbPath = "PBProtocol\\crossproto\\activity\\CrossMemoryCollect.proto";
+        String pbPath2 = "PBProtocol\\crossproto\\system\\CrossDestinyFight.proto";
         // String pbPath = "PBProtocol\\crossproto\\system\\CrossFairyLandTest.proto";
-        String pbPath = "PBProtocol\\crossproto\\activity\\CrossMemoryCollectTmp.proto";
+        String pbPath = "PBProtocol\\protofile\\destinyFight\\DestinyFight.proto";
         // String pbPath = "PBProtocol\\protofile\\player\\FairyLandTest.proto";
-        String pbPath2 = "PBProtocol\\protofile\\player\\MemoryCollectTmp.proto";//副本 用来辅助代码生成
+        // String pbPath2 = "crossproto/system/CrossDestinyFight.proto";//副本 用来辅助代码生成
         //String pbPath2 = "";
         execPb();
         if (args.length > 2) {
@@ -256,12 +264,14 @@ public class AutoCreateCmd {
                     String originLogicPath = ROOT_PATH + finalModuelPath + "\\logic\\";
                     //来自跨服
                     boolean createBaseLogic = true;
+                    String createLogicName = fileName;
                     if (serverCmd && isCross) {
                         createBaseLogic = false;
+                        createLogicName = fileName2;
                     }
 
                     String logicPathFile = logicPath + cmdClass + "Logic.java";
-                    String logicBasePathFile = originLogicPath + fileName + "BaseLogic.java";
+                    String logicBasePathFile = originLogicPath + createLogicName + "BaseLogic.java";
                     createLogic(moduleName, cmdClass.toString(), logicPathFile, logicBasePathFile, isCross, pbFilePath.contains("activity"), cmdDesc.contains("mgr"), code, packageData.value().toString(), createBaseLogic);
 
                     System.out.println("create cmd success " + fileCmdPath);
@@ -310,6 +320,9 @@ public class AutoCreateCmd {
                 if (line.contains("{author}")) {
                     line = line.replace("{author}", author);
                 }
+                if (line.contains("{date}")) {
+                    line = line.replace("{date}", date);
+                }
                 content.append(line).append("\n");
             }
         } catch (IOException e) {
@@ -343,7 +356,7 @@ public class AutoCreateCmd {
                 resp = "Common.EmptyMsg";
             }
         }
-        if (!serverCodeResp.isEmpty()) {
+        if (!serverCodeResp.isEmpty() && !messagList.contains(className + "Resp")) {
             resp = fileName2 + "." + serverCodeResp + "Resp";
         }
         String cmdTmlFile = isActivity ? "./CrossAcvityCmd.txt" : "./CrossSystemCmd.txt";
@@ -388,6 +401,9 @@ public class AutoCreateCmd {
                 if (line.contains("{author}")) {
                     line = line.replace("{author}", author);
                 }
+                if (line.contains("{date}")) {
+                    line = line.replace("{date}", date);
+                }
                 if (line.contains("{cmdDesc}")) {
                     line = line.replace("{cmdDesc}", codeDesc);
                 }
@@ -428,8 +444,24 @@ public class AutoCreateCmd {
             isCommon = true;
         }
         if (fromCross) {
-            req = fileName + "." + className;
-            resp = fileName + "." + className;
+            String cmdClass = className.toString();
+            String className2;
+            className2 = cmdClass.replace("Ctg", "Gtc");
+            className2 = className2.replace("Back", "");
+            String tmpResp = fileName + "." + className2 + "Resp";
+            if (messagList.contains(className2 + "Resp")) {
+                req = tmpResp;
+                resp = tmpResp;
+            } else {
+                String className3;
+                className3 = cmdClass.replace("Ctg", "");
+                className3 = className3.replace("Back", "");
+                String tmpResp2 = fileName2 + "." + className3 + "Resp";
+                if (messagList2.contains(className3 + "Resp")) {
+                    req = tmpResp2;
+                    resp = tmpResp2;
+                }
+            }
         }
         String cmdTmlFile = "";
         if (!isAc) {
@@ -441,6 +473,9 @@ public class AutoCreateCmd {
         if (cmdTmlFile.isEmpty()) {
             return template;
         }
+
+        String clientCommand = fromCross ? "CrossToGameCommand" : "ClientCommand";
+
         String moduleClass = moduleName.substring(0, 1).toUpperCase() + moduleName.substring(1);
         String cmdClass = className.toString();
         String cmdFunc = cmdClass.substring(0, 1).toLowerCase() + cmdClass.substring(1);
@@ -480,6 +515,9 @@ public class AutoCreateCmd {
                 if (line.contains("{author}")) {
                     line = line.replace("{author}", author);
                 }
+                if (line.contains("{date}")) {
+                    line = line.replace("{date}", date);
+                }
                 if (line.contains("{cmdDesc}")) {
                     line = line.replace("{cmdDesc}", codeDesc);
                 }
@@ -488,6 +526,17 @@ public class AutoCreateCmd {
                         cross = ".cross";
                     }
                     line = line.replace("{cross}", cross);
+                }
+                if (line.contains("{clientCommand}")) {
+                    line = line.replace("{clientCommand}", clientCommand);
+                }
+                if (line.contains("{pbPath2}")) {
+                    String pbPath2 = "";
+                    if (fromCross) {
+                        pbPath2 = "import " + pbPackage.replace("cross.", "");
+                        pbPath2 = pbPath2 + "." + ModuleClass + ";";
+                    }
+                    line = line.replace("{pbPath2}", pbPath2);
                 }
                 //{cmdClass} {cmdFunc} {cts} {stc}
                 content.append(line).append("\n");
@@ -543,7 +592,8 @@ public class AutoCreateCmd {
         }
         String file;
         String baseFile = "";
-        if (isCross && createBaseLogic) {
+        boolean createCrossLogic = isCross && createBaseLogic;
+        if (createCrossLogic) {
             if (code >= 30_0000 && code < 39_9999) {
                 file = "./CrossAcvityLogic.txt";
                 baseFile = "./CrossAcvityBaseLogic.txt";
@@ -569,7 +619,7 @@ public class AutoCreateCmd {
             }
         }
         String moduleClass = moduleName.substring(0, 1).toUpperCase() + moduleName.substring(1);
-        if (!baseFile.isEmpty() && createBaseLogic) {
+        if (!baseFile.isEmpty()) {
             File baseLogicFd = new File(logicBasePathFile);
             if (!baseLogicFd.exists()) {
                 StringBuilder baseContent = new StringBuilder();
@@ -585,6 +635,18 @@ public class AutoCreateCmd {
                         }
                         if (line.contains("{pbPath}")) {
                             line = line.replace("{pbPath}", pbPath + "." + fileName);
+                        }
+                        if (line.contains("{desc}")) {
+                            line = line.replace("{desc}", "auto create");
+                        }
+                        if (line.contains("{author}")) {
+                            line = line.replace("{author}", author);
+                        }
+                        if (line.contains("{date}")) {
+                            line = line.replace("{date}", date);
+                        }
+                        if (line.contains("{pbServerPath}")) {
+                            line = line.replace("{pbServerPath}", pbPackPath2 + "." + fileName2);
                         }
                         baseContent.append(line).append("\n");
                     }
@@ -613,10 +675,43 @@ public class AutoCreateCmd {
             isCommon = true;
         }
         //来自跨服
-        if (!createBaseLogic) {
-            req = fileName + "." + cmdClass;
-            resp = fileName + "." + cmdClass;
+        if (!createCrossLogic && isCross) {
+            // req = fileName + "." + cmdClass + "Req";
+            String className2;
+            className2 = cmdClass.replace("Ctg", "Gtc");
+            className2 = className2.replace("Back", "");
+            String tmpResp = fileName + "." + className2 + "Resp";
+            if (messagList.contains(className2 + "Resp")) {
+                req = tmpResp;
+                resp = tmpResp;
+            } else {
+                String className3;
+                className3 = cmdClass.replace("Ctg", "");
+                className3 = className3.replace("Back", "");
+                String tmpResp2 = fileName2 + "." + className3 + "Resp";
+                if (messagList2.contains(className3 + "Resp")) {
+                    req = tmpResp2;
+                    resp = tmpResp2;
+                }
+            }
         }
+        boolean createPb2 = false;
+        if (createBaseLogic && !messagList.contains(cmdClass + "Resp")) {
+            String serverCodeStr = "";
+            String serverCodeResp = "";
+            int serverCode = code >= 30_0000 && code < 39_9999 ? code - 10_0000 : code - 20_0000;
+            if (elListMap2.containsKey(serverCode)) {
+                serverCodeStr = elListMap2.get(serverCode);
+            }
+            if (elListCmdMap2.containsKey(serverCode)) {
+                serverCodeResp = elListCmdMap2.get(serverCode);
+            }
+            if (!serverCodeResp.isEmpty()) {
+                resp = fileName2 + "." + serverCodeResp + "Resp";
+                createPb2 = true;
+            }
+        }
+
         //File fileClass = new File(file);
         StringBuilder content = new StringBuilder();
         try (FileReader fileReader = new FileReader(file);
@@ -643,6 +738,27 @@ public class AutoCreateCmd {
                 }
                 if (line.contains("{pbPath}")) {
                     line = line.replace("{pbPath}", pbPath + "." + fileName);
+                }
+                if (line.contains("{desc}")) {
+                    line = line.replace("{desc}", "auto create");
+                }
+                if (line.contains("{pbPath2}")) {
+                    String pbPath2 = "";
+                    if (!createCrossLogic || createPb2) {
+                        pbPath2 = "import " + pbPath.replace("cross.", "");
+                        String ModuleClass = fileName.replace("Cross", "");
+                        pbPath2 = pbPath2 + "." + ModuleClass + ";";
+                    }
+                    line = line.replace("{pbPath2}", pbPath2);
+                }
+                if (line.contains("{author}")) {
+                    line = line.replace("{author}", author);
+                }
+                if (line.contains("{date}")) {
+                    line = line.replace("{date}", date);
+                }
+                if (line.contains("{pbServerPath}")) {
+                    line = line.replace("{pbServerPath}", pbPackPath2 + "." + fileName2);
                 }
                 //{cmdClass} {cmdFunc} {cts} {stc}
                 content.append(line).append("\n");
