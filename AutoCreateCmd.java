@@ -3,6 +3,8 @@ package org.example;
 import com.squareup.protoparser.*;
 
 import java.io.*;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -13,13 +15,12 @@ import java.util.stream.Collectors;
 
 /**
  * @author hyy
- * @desc  用法 ：协议号的常量命名（ 跟协议的消息内容message （去掉 req resp后）一致 （头部大小写有区分而已）
- *        有些协议只是同步不需要生成cmd 则在协议号写 skip 关键字
- *        默认是module的生成 如果是生成在mgr模块的 则在协议后后面备注 mgr 关键字
- *        跨服如果没有返回区服的协议（直接返回给客户端那种）则协议号后面两位跟区服协议号保持一致，就可以自动映射到区服返回跟resp消息体
- *        跨服如果有返回 则协议号命名以 Ctg开头(区服上跨服则已Gtc开头） 然后后面命名跟区服的协议号一致 然后必须在跨服定义Gtc开头的resp
- *        协议号后面备注可以生成desc
- *
+ * @desc 用法 ：协议号的常量命名（ 跟协议的消息内容message （去掉 req resp后）一致 （头部大小写有区分而已）
+ * 有些协议只是同步不需要生成cmd 则在协议号写 skip 关键字
+ * 默认是module的生成 如果是生成在mgr模块的 则在协议后后面备注 mgr 关键字
+ * 跨服如果没有返回区服的协议（直接返回给客户端那种）则协议号后面两位跟区服协议号保持一致，就可以自动映射到区服返回跟resp消息体
+ * 跨服如果有返回 则协议号命名以 Ctg开头(区服上跨服则已Gtc开头） 然后后面命名跟区服的协议号的常量一致 然后必须在跨服定义Gtc开头的resp
+ * 协议号后面备注可以生成desc
  * @date 2024/8/28 11:12
  */
 public class AutoCreateCmd {
@@ -43,6 +44,9 @@ public class AutoCreateCmd {
 
     public static Map<Integer, String> elListCmdMap2 = new HashMap<>();//协助的code 数值对应code string
     public static String date = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+
+    public static Map<String, String> codeStrCodeNumMap2 = new HashMap<>();//协助的code字符串变量对应pbcode
+
     /**
      * 填入pb文件  注释带有mgr表示manger里面的模块 带有 skip 表示不生成 跨服respene -10000 对应code
      *
@@ -50,10 +54,9 @@ public class AutoCreateCmd {
      * @throws IOException
      */
     public static void main(String[] args) throws IOException {
-
-        String pbPath2 = "PBProtocol\\crossproto\\system\\CrossDestinyFight.proto";
+        String pbPath = "PBProtocol\\crossproto\\system\\CrossDestinyFight.proto";
         // String pbPath = "PBProtocol\\crossproto\\system\\CrossFairyLandTest.proto";
-        String pbPath = "PBProtocol\\protofile\\destinyFight\\DestinyFight.proto";
+        String pbPath2 = "PBProtocol\\protofile\\destinyFight\\DestinyFight.proto";
         // String pbPath = "PBProtocol\\protofile\\player\\FairyLandTest.proto";
         // String pbPath2 = "crossproto/system/CrossDestinyFight.proto";//副本 用来辅助代码生成
         //String pbPath2 = "";
@@ -94,7 +97,7 @@ public class AutoCreateCmd {
                         String cmdName = codeData.name();
                         String codePath = fileName2 + "." + enumElement.name() + "." + cmdName + "_VALUE";
                         elListMap2.put(code, codePath);
-
+                        codeStrCodeNumMap2.put(cmdName, codePath);
                         String[] cmdArr = cmdName.split("_");
                         StringBuilder cmdClass = new StringBuilder();
                         for (String s : cmdArr) {
@@ -237,9 +240,9 @@ public class AutoCreateCmd {
                     }
 
                     if (isCross) {
+                        String serverCodeStr = "";
+                        String serverCodeResp = "";
                         if (code >= 30_0000 && code < 49_99999) {
-                            String serverCodeStr = "";
-                            String serverCodeResp = "";
                             int serverCode = code >= 30_0000 && code < 39_9999 ? code - 10_0000 : code - 20_0000;
                             if (elListMap2.containsKey(serverCode)) {
                                 serverCodeStr = elListMap2.get(serverCode);
@@ -249,10 +252,15 @@ public class AutoCreateCmd {
                             }
                             template = createCrossTemplate(cmdClass, finalePackageName, codePath, packageData.value().toString(), fileName, cmdDesc, code <= 39_9999, moduleName, serverCodeStr, serverCodeResp);
                         } else {
-                            template = createTemplate(cmdClass, finalePackageName, codePath, packageData.value().toString(), fileName, cmdDesc, true, moduleName);
+                            String serverCodeVar = cmdName.replace("ctg", "");
+                            serverCodeVar = Character.toLowerCase(serverCodeVar.charAt(0)) + serverCodeVar.substring(1);
+                            if (codeStrCodeNumMap2.containsKey(serverCodeVar)) {
+                                serverCodeStr = codeStrCodeNumMap2.get(serverCodeVar);
+                            }
+                            template = createTemplate(cmdClass, finalePackageName, codePath, packageData.value().toString(), fileName, cmdDesc, true, moduleName, serverCodeStr);
                         }
                     } else {
-                        template = createTemplate(cmdClass, finalePackageName, codePath, packageData.value().toString(), fileName, cmdDesc, false, moduleName);
+                        template = createTemplate(cmdClass, finalePackageName, codePath, packageData.value().toString(), fileName, cmdDesc, false, moduleName, "");
                     }
                     try (FileWriter fileWriter = new FileWriter(file)) {
                         fileWriter.write(String.valueOf(template));
@@ -272,7 +280,7 @@ public class AutoCreateCmd {
 
                     String logicPathFile = logicPath + cmdClass + "Logic.java";
                     String logicBasePathFile = originLogicPath + createLogicName + "BaseLogic.java";
-                    createLogic(moduleName, cmdClass.toString(), logicPathFile, logicBasePathFile, isCross, pbFilePath.contains("activity"), cmdDesc.contains("mgr"), code, packageData.value().toString(), createBaseLogic);
+                    createLogic(moduleName, cmdClass.toString(), logicPathFile, logicBasePathFile, isCross, pbFilePath.contains("activity"), cmdDesc.contains("mgr"), code, packageData.value().toString(), createBaseLogic, cmdDesc);
 
                     System.out.println("create cmd success " + fileCmdPath);
                 }
@@ -422,7 +430,7 @@ public class AutoCreateCmd {
         return content;
     }
 
-    public static StringBuilder createTemplate(StringBuilder className, String packageName, String code, String pbPackage, String fileName, String codeDesc, boolean fromCross, String moduleName) {
+    public static StringBuilder createTemplate(StringBuilder className, String packageName, String code, String pbPackage, String fileName, String codeDesc, boolean fromCross, String moduleName, String serverCode) {
 
 
         StringBuilder template = new StringBuilder();
@@ -466,9 +474,14 @@ public class AutoCreateCmd {
         String cmdTmlFile = "";
         if (!isAc) {
             cmdTmlFile = isMgr ? "./ServerMgrCmd.txt" : "./ServerModuleCmd.txt";
-
+            if (fromCross) {
+                cmdTmlFile = isMgr ? "./ServerMgrCrossCmd.txt" : "./ServerModuleCrossCmd.txt";
+            }
         } else {
             cmdTmlFile = isMgr ? "./ServerActivityMgrCmd.txt" : "./ServerActivityModuleCmd.txt";
+            if (fromCross) {
+                cmdTmlFile = isMgr ? "./ServerActivityMgrCrossCmd.txt" : "./ServerActivityModuleCrossCmd.txt";
+            }
         }
         if (cmdTmlFile.isEmpty()) {
             return template;
@@ -532,11 +545,17 @@ public class AutoCreateCmd {
                 }
                 if (line.contains("{pbPath2}")) {
                     String pbPath2 = "";
-                    if (fromCross) {
-                        pbPath2 = "import " + pbPackage.replace("cross.", "");
-                        pbPath2 = pbPath2 + "." + ModuleClass + ";";
-                    }
+                   // if (fromCross) {
+                     //   pbPath2 = "import " + pbPackage.replace("cross.", "");
+                     //  pbPath2 = pbPath2 + "." + ModuleClass + ";";
+                  //  }
                     line = line.replace("{pbPath2}", pbPath2);
+                }
+                if (line.contains("{serverCode}")) {
+                    line = line.replace("{serverCode}", serverCode);
+                }
+                if (line.contains("{pbServerPath}")) {
+                    line = line.replace("{pbServerPath}", pbPackPath2 + "." + fileName2);
                 }
                 //{cmdClass} {cmdFunc} {cts} {stc}
                 content.append(line).append("\n");
@@ -580,7 +599,7 @@ public class AutoCreateCmd {
         }*/
     }
 
-    public static void createLogic(String moduleName, String cmdClass, String logicPathFile, String logicBasePathFile, boolean isCross, boolean isAc, boolean isMgr, int code, String pbPath, boolean createBaseLogic) {
+    public static void createLogic(String moduleName, String cmdClass, String logicPathFile, String logicBasePathFile, boolean isCross, boolean isAc, boolean isMgr, int code, String pbPath, boolean createBaseLogic, String cmdDesc) {
         File fileFd = new File(logicPathFile);
 
         File parentDir = fileFd.getParentFile();
@@ -759,6 +778,9 @@ public class AutoCreateCmd {
                 }
                 if (line.contains("{pbServerPath}")) {
                     line = line.replace("{pbServerPath}", pbPackPath2 + "." + fileName2);
+                }
+                if (line.contains("{cmdDesc}")) {
+                    line = line.replace("{cmdDesc}", cmdDesc);
                 }
                 //{cmdClass} {cmdFunc} {cts} {stc}
                 content.append(line).append("\n");
