@@ -238,10 +238,9 @@ public class AutoCreateCmd {
                     if (file.exists()) {
                         continue;
                     }
-
+                    String serverCodeStr = "";
+                    String serverCodeResp = "";
                     if (isCross) {
-                        String serverCodeStr = "";
-                        String serverCodeResp = "";
                         if (code >= 30_0000 && code < 49_99999) {
                             int serverCode = code >= 30_0000 && code < 39_9999 ? code - 10_0000 : code - 20_0000;
                             if (elListMap2.containsKey(serverCode)) {
@@ -249,6 +248,13 @@ public class AutoCreateCmd {
                             }
                             if (elListCmdMap2.containsKey(serverCode)) {
                                 serverCodeResp = elListCmdMap2.get(serverCode);
+                            }
+                            if (serverCodeStr.isEmpty()) {
+                                String serverCodeVar = cmdName.replace("ctg", "");
+                                serverCodeVar = Character.toLowerCase(serverCodeVar.charAt(0)) + serverCodeVar.substring(1);
+                                if (codeStrCodeNumMap2.containsKey(serverCodeVar)) {
+                                    serverCodeStr = codeStrCodeNumMap2.get(serverCodeVar);
+                                }
                             }
                             template = createCrossTemplate(cmdClass, finalePackageName, codePath, packageData.value().toString(), fileName, cmdDesc, code <= 39_9999, moduleName, serverCodeStr, serverCodeResp);
                         } else {
@@ -280,7 +286,7 @@ public class AutoCreateCmd {
 
                     String logicPathFile = logicPath + cmdClass + "Logic.java";
                     String logicBasePathFile = originLogicPath + createLogicName + "BaseLogic.java";
-                    createLogic(moduleName, cmdClass.toString(), logicPathFile, logicBasePathFile, isCross, pbFilePath.contains("activity"), cmdDesc.contains("mgr"), code, packageData.value().toString(), createBaseLogic, cmdDesc);
+                    createLogic(moduleName, cmdClass.toString(), logicPathFile, logicBasePathFile, isCross, pbFilePath.contains("activity"), cmdDesc.contains("mgr"), code, packageData.value().toString(), createBaseLogic, cmdDesc, codePath, serverCodeStr);
 
                     System.out.println("create cmd success " + fileCmdPath);
                 }
@@ -356,6 +362,8 @@ public class AutoCreateCmd {
             }
         }
         String resp = fileName + "." + className + "Resp";
+
+        String backServerCodeStr = "";
         if (!messagList.contains(className + "Resp")) {
             if (isActivity) {
                 resp = "BaseCrossProto.BaseCrossReqMsg";
@@ -363,6 +371,9 @@ public class AutoCreateCmd {
             } else {
                 resp = "Common.EmptyMsg";
             }
+        }
+        if (messagList.contains(className + "Resp")) {
+            backServerCodeStr = code.replace("gtc", "ctg");
         }
         if (!serverCodeResp.isEmpty() && !messagList.contains(className + "Resp")) {
             resp = fileName2 + "." + serverCodeResp + "Resp";
@@ -421,6 +432,13 @@ public class AutoCreateCmd {
                 if (line.contains("{pbServerPath}")) {
                     line = line.replace("{pbServerPath}", pbPackPath2 + "." + fileName2);
                 }
+                if (line.contains("{respCode}")) {
+                    if (!backServerCodeStr.isEmpty()) {
+                        line = line.replace("{respCode}", backServerCodeStr);
+                    } else {
+                        line = line.replace("{respCode}", serverCode);
+                    }
+                }
                 //{cmdClass} {cmdFunc} {cts} {stc}
                 content.append(line).append("\n");
             }
@@ -459,7 +477,10 @@ public class AutoCreateCmd {
             String tmpResp = fileName + "." + className2 + "Resp";
             if (messagList.contains(className2 + "Resp")) {
                 req = tmpResp;
-                resp = tmpResp;
+                String classNameServer;
+                classNameServer = cmdClass.replace("Ctg", "");
+                classNameServer = classNameServer.replace("Back", "");
+                resp = fileName2 + "." + classNameServer + "Resp";
             } else {
                 String className3;
                 className3 = cmdClass.replace("Ctg", "");
@@ -545,10 +566,10 @@ public class AutoCreateCmd {
                 }
                 if (line.contains("{pbPath2}")) {
                     String pbPath2 = "";
-                   // if (fromCross) {
-                     //   pbPath2 = "import " + pbPackage.replace("cross.", "");
-                     //  pbPath2 = pbPath2 + "." + ModuleClass + ";";
-                  //  }
+                    // if (fromCross) {
+                    //   pbPath2 = "import " + pbPackage.replace("cross.", "");
+                    //  pbPath2 = pbPath2 + "." + ModuleClass + ";";
+                    //  }
                     line = line.replace("{pbPath2}", pbPath2);
                 }
                 if (line.contains("{serverCode}")) {
@@ -599,7 +620,7 @@ public class AutoCreateCmd {
         }*/
     }
 
-    public static void createLogic(String moduleName, String cmdClass, String logicPathFile, String logicBasePathFile, boolean isCross, boolean isAc, boolean isMgr, int code, String pbPath, boolean createBaseLogic, String cmdDesc) {
+    public static void createLogic(String moduleName, String cmdClass, String logicPathFile, String logicBasePathFile, boolean isCross, boolean isAc, boolean isMgr, int code, String pbPath, boolean createBaseLogic, String cmdDesc, String codeStr, String codeStr2) {
         File fileFd = new File(logicPathFile);
 
         File parentDir = fileFd.getParentFile();
@@ -702,7 +723,10 @@ public class AutoCreateCmd {
             String tmpResp = fileName + "." + className2 + "Resp";
             if (messagList.contains(className2 + "Resp")) {
                 req = tmpResp;
-                resp = tmpResp;
+                String classNameServer;
+                classNameServer = cmdClass.replace("Ctg", "");
+                classNameServer = classNameServer.replace("Back", "");
+                resp = fileName2 + "." + classNameServer + "Resp";
             } else {
                 String className3;
                 className3 = cmdClass.replace("Ctg", "");
@@ -715,9 +739,9 @@ public class AutoCreateCmd {
             }
         }
         boolean createPb2 = false;
+        String serverCodeStr = "";
+        String serverCodeResp = "";
         if (createBaseLogic && !messagList.contains(cmdClass + "Resp")) {
-            String serverCodeStr = "";
-            String serverCodeResp = "";
             int serverCode = code >= 30_0000 && code < 39_9999 ? code - 10_0000 : code - 20_0000;
             if (elListMap2.containsKey(serverCode)) {
                 serverCodeStr = elListMap2.get(serverCode);
@@ -781,6 +805,13 @@ public class AutoCreateCmd {
                 }
                 if (line.contains("{cmdDesc}")) {
                     line = line.replace("{cmdDesc}", cmdDesc);
+                }
+                if (line.contains("{code}")) {
+                    if (!codeStr2.isEmpty()) {
+                        line = line.replace("{code}", codeStr2);
+                    } else {
+                        line = line.replace("{code}", codeStr);
+                    }
                 }
                 //{cmdClass} {cmdFunc} {cts} {stc}
                 content.append(line).append("\n");
